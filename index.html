@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ultimate Web3 Wallet Hunter</title>
+    <script src="https://cdn.ethers.io/lib/ethers-5.2.umd.min.js"></script>
+    <style>
+        :root { --bg: #05070a; --panel: #11141d; --text: #e0e6ed; --accent: #00f2ff; --win: #00ff88; }
+        body { font-family: 'Courier New', monospace; background: var(--bg); color: var(--text); margin: 0; padding: 15px; }
+        .container { max-width: 1000px; margin: 0 auto; background: var(--panel); border: 2px solid #1f2937; border-radius: 12px; padding: 25px; box-shadow: 0 0 50px rgba(0,242,255,0.1); }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 25px; }
+        .card { background: #0a0d14; padding: 15px; border: 1px solid #2d3748; border-radius: 8px; text-align: center; }
+        .val { font-size: 24px; font-weight: bold; color: var(--accent); display: block; }
+        .label { font-size: 11px; color: #718096; text-transform: uppercase; }
+        
+        #console { height: 300px; overflow-y: auto; background: #000; border: 1px solid #333; padding: 15px; font-size: 12px; line-height: 1.5; color: #00ff41; margin-bottom: 20px; border-radius: 5px; }
+        
+        .controls { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
+        input { flex: 1; background: #1a202c; border: 1px solid #4a5568; color: white; padding: 12px; border-radius: 5px; outline: none; }
+        button { padding: 12px 25px; border-radius: 5px; border: none; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        .btn-hunt { background: linear-gradient(45deg, #00f2ff, #0072ff); color: white; }
+        .btn-test { background: #4a5568; color: white; }
+        .btn-clear { background: #e53e3e; color: white; }
+
+        .found-list { border-top: 2px solid var(--win); padding-top: 20px; }
+        .wallet-card { background: #1a202c; padding: 20px; border-radius: 10px; border-left: 6px solid var(--win); margin-bottom: 15px; animation: flash 1s; }
+        @keyframes flash { from { background: #2d3748; } to { background: #1a202c; } }
+        .tag { background: #2d3748; padding: 3px 8px; border-radius: 4px; font-size: 11px; margin-right: 5px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2 style="text-align:center; color: var(--accent);">⚡ PRO WEB3 HUNTER v3.0</h2>
+    
+    <div class="grid">
+        <div class="card"><span class="label">চেক করা হয়েছে</span><span id="cCount" class="val">0</span></div>
+        <div class="card"><span class="label">সফল ওয়ালেট</span><span id="fCount" class="val" style="color: var(--win);">0</span></div>
+        <div class="card"><span class="label">নেটওয়ার্ক স্ট্যাটাস</span><span id="netStatus" class="val" style="font-size: 14px;">Online</span></div>
+    </div>
+
+    <div class="controls">
+        <input type="number" id="batchSize" value="5000" placeholder="কতগুলো সার্চ করবেন?">
+        <button class="btn-hunt" id="huntBtn" onclick="toggleHunt()">হান্টিং শুরু করুন</button>
+        <button class="btn-test" onclick="runTest()">সিস্টেম টেস্ট</button>
+        <button class="btn-clear" onclick="clearData()">ডাটা মুছুন</button>
+    </div>
+
+    <div id="console">> সিস্টেম লোড হয়েছে। নোড কানেকশন চেক করা হচ্ছে...</div>
+
+    <div class="found-list">
+        <h3>💰 হিস্ট্রি পাওয়া গেছে এমন ওয়ালেট:</h3>
+        <div id="foundArea"></div>
+    </div>
+</div>
+
+<script>
+    let hunting = false;
+    let checked = 0;
+    let found = 0;
+    const foundData = JSON.parse(localStorage.getItem('huntedWallets') || '[]');
+
+    // Public RPC Providers
+    const providers = [
+        new ethers.providers.JsonRpcProvider("https://cloudflare-eth.com"),
+        new ethers.providers.JsonRpcProvider("https://bsc-dataseed.binance.org/"),
+        new ethers.providers.JsonRpcProvider("https://polygon-rpc.com")
+    ];
+
+    // শুরুতেই সেভ করা ডাটা লোড করা
+    window.onload = () => {
+        found = foundData.length;
+        document.getElementById('fCount').innerText = found;
+        foundData.forEach(w => renderWallet(w));
+    };
+
+    async function toggleHunt() {
+        if(hunting) {
+            hunting = false;
+            document.getElementById('huntBtn').innerText = "হান্টিং শুরু করুন";
+            document.getElementById('huntBtn').style.background = "linear-gradient(45deg, #00f2ff, #0072ff)";
+            return;
+        }
+        
+        hunting = true;
+        document.getElementById('huntBtn').innerText = "থামুন (Stop)";
+        document.getElementById('huntBtn').style.background = "#e53e3e";
+        startLoop();
+    }
+
+    async function startLoop() {
+        const consoleLog = document.getElementById('console');
+        const limit = document.getElementById('batchSize').value;
+
+        while(hunting && checked < limit) {
+            // একসাথে ৫টি ওয়ালেট চেক (Parallel Processing)
+            const tasks = [];
+            for(let i=0; i<5; i++) {
+                const wallet = ethers.Wallet.createRandom();
+                tasks.push(checkWallet(wallet));
+            }
+
+            const results = await Promise.all(tasks);
+            
+            results.forEach(res => {
+                checked++;
+                document.getElementById('cCount').innerText = checked;
+                
+                if(checked % 10 === 0) {
+                    consoleLog.innerHTML = `[${new Date().toLocaleTimeString()}] চেকিং: ${res.address.substring(0,20)}...<br>` + consoleLog.innerHTML.substring(0, 2000);
+                }
+
+                if(res.isSuccess) {
+                    found++;
+                    document.getElementById('fCount').innerText = found;
+                    const data = { addr: res.address, key: res.key, txs: res.txs };
+                    foundData.push(data);
+                    localStorage.setItem('huntedWallets', JSON.stringify(foundData));
+                    renderWallet(data);
+                }
+            });
+
+            // CPU কে একটু রেস্ট দেয়া
+            await new Promise(r => setTimeout(r, 50));
+        }
+    }
+
+    async function checkWallet(wallet) {
+        try {
+            // ৩টি চেইনে ট্রানজেকশন কাউন্ট দেখা
+            const counts = await Promise.all(providers.map(p => p.getTransactionCount(wallet.address)));
+            const totalTx = counts.reduce((a, b) => a + b, 0);
+            return { 
+                address: wallet.address, 
+                key: wallet.privateKey, 
+                isSuccess: totalTx > 0, 
+                txs: counts 
+            };
+        } catch (e) {
+            return { address: wallet.address, isSuccess: false };
+        }
+    }
+
+    function renderWallet(data) {
+        const area = document.getElementById('foundArea');
+        const div = document.createElement('div');
+        div.className = 'wallet-card';
+        div.innerHTML = `
+            <strong>Address:</strong> ${data.addr}<br>
+            <strong>Private Key:</strong> ${data.key}<br>
+            <div style="margin-top:10px;">
+                <span class="tag">ETH: ${data.txs[0]} TX</span>
+                <span class="tag">BSC: ${data.txs[1]} TX</span>
+                <span class="tag">Polygon: ${data.txs[2]} TX</span>
+            </div>
+        `;
+        area.prepend(div);
+    }
+
+    function runTest() {
+        alert("টেস্ট মোড: যদি সিস্টেম কোনো ট্রানজেকশন খুঁজে পায়, তবে সেটি ঠিক এভাবে আপনার লিস্টে সেভ হবে।");
+        const testData = {
+            addr: "0x123...TEST_ADDRESS",
+            key: "TEST_PRIVATE_KEY_123456789",
+            txs: [1, 0, 5]
+        };
+        renderWallet(testData);
+    }
+
+    function clearData() {
+        if(confirm("সব সেভ করা ডাটা মুছে ফেলবেন?")) {
+            localStorage.removeItem('huntedWallets');
+            location.reload();
+        }
+    }
+</script>
+</body>
+</html>
